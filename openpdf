@@ -1,0 +1,128 @@
+import sys
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPainter, QColor, QPen, QPixmap
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QPushButton, QFileDialog
+from PyPDF2 import PdfFileReader
+
+class PdfViewerApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("PDF Viewer")
+        self.setGeometry(100, 100, 800, 600)
+
+        self.pdf_filename = ""
+        self.page_number = 1
+        self.total_pages = 0
+
+        self.layout = QVBoxLayout()
+
+        # Кнопки для выбора файлов и навигации по страницам
+        self.btn_open = QPushButton("Открыть PDF")
+        self.btn_open.clicked.connect(self.open_pdf)
+        self.layout.addWidget(self.btn_open)
+
+        self.btn_prev_page = QPushButton("Предыдущая страница")
+        self.btn_prev_page.clicked.connect(self.show_previous_page)
+        self.layout.addWidget(self.btn_prev_page)
+
+        self.btn_next_page = QPushButton("Следующая страница")
+        self.btn_next_page.clicked.connect(self.show_next_page)
+        self.layout.addWidget(self.btn_next_page)
+
+        self.label_page_number = QLabel()
+        self.layout.addWidget(self.label_page_number)
+
+        # Отображение страницы
+        self.label_page = QLabel()
+        self.layout.addWidget(self.label_page)
+
+        # Переменные для рисования прямоугольников на странице
+        self.drawing = False
+        self.origin_x = 0
+        self.origin_y = 0
+        self.current_x = 0
+        self.current_y = 0
+
+        # Переопределение методов для рисования на QLabel
+        self.label_page.mousePressEvent = self.mouse_press_event
+        self.label_page.mouseMoveEvent = self.mouse_move_event
+        self.label_page.mouseReleaseEvent = self.mouse_release_event
+
+        self.widget = QWidget()
+        self.widget.setLayout(self.layout)
+        self.setCentralWidget(self.widget)
+
+    def open_pdf(self):
+        self.pdf_filename, _ = QFileDialog.getOpenFileName(self, "Выберите PDF", "", "PDF Files (*.pdf)")
+        if self.pdf_filename:
+            self.load_pdf()
+
+    def load_pdf(self):
+        pdf_file = PdfFileReader(self.pdf_filename)
+        self.total_pages = pdf_file.numPages
+        self.page_number = 1
+        self.label_page_number.setText(f"Страница {self.page_number} из {self.total_pages}")
+        self.show_page()
+
+    def show_page(self):
+        pdf_file = PdfFileReader(self.pdf_filename)
+        page = pdf_file.getPage(self.page_number - 1)
+        page_width = page.mediaBox.getWidth()
+        page_height = page.mediaBox.getHeight()
+
+        label_width = self.label_page.width()
+        label_height = self.label_page.height()
+
+        pixmap = QPixmap(label_width, label_height)
+        pixmap.fill(Qt.white)
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Рисование прямоугольников на странице
+        if self.drawing:
+            pen = QPen(QColor(255, 0, 0))
+            pen.setWidth(2)
+            painter.setPen(pen)
+            painter.drawRect(self.origin_x, self.origin_y, self.current_x - self.origin_x, self.current_y - self.origin_y)
+
+        painter.scale(label_width / page_width, label_height / page_height)
+        page.render(painter)
+        painter.end()
+
+        self.label_page.setPixmap(pixmap)
+
+    def show_previous_page(self):
+        if self.page_number > 1:
+            self.page_number -= 1
+            self.show_page()
+            self.label_page_number.setText(f"Страница {self.page_number} из {self.total_pages}")
+
+    def show_next_page(self):
+        if self.page_number < self.total_pages:
+            self.page_number += 1
+            self.show_page()
+            self.label_page_number.setText(f"Страница {self.page_number} из {self.total_pages}")
+
+    def mouse_press_event(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.drawing = True
+            self.origin_x = event.pos().x()
+            self.origin_y = event.pos().y()
+
+    def mouse_move_event(self, event):
+        if self.drawing:
+            self.current_x = event.pos().x()
+            self.current_y = event.pos().y()
+            self.show_page()
+
+    def mouse_release_event(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.drawing = False
+            self.show_page()
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = PdfViewerApp()
+    window.show()
+    sys.exit(app.exec())
